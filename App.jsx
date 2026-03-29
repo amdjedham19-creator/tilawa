@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 
+// دالة التنظيف (للاستخدام غداً)
 const normalizeArabic = (text) => {
   if (!text) return "";
-  return text
-    .replace(/[\u064B-\u065F\u0670]/g, "") 
-    .replace(/[أإآء]/g, "ا")             
-    .replace(/ة/g, "ه")                
-    .replace(/ى/g, "ي")                
-    .trim();
+  return text.replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآء]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").trim();
 };
 
 export default function App() {
@@ -17,15 +13,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [revealedCount, setRevealedCount] = useState(0);
   const [isListening, setIsListening] = useState(false);
-  const [errorInfo, setErrorInfo] = useState(null);
   const progressRef = useRef({ idx: 0 });
   const recRef = useRef(null);
 
   useEffect(() => {
-    fetch("https://api.alquran.cloud/v1/surah")
-      .then(res => res.json())
-      .then(data => setSurahs(data.data))
-      .catch(err => console.error("Error", err));
+    fetch("https://api.alquran.cloud/v1/surah").then(res => res.json()).then(data => setSurahs(data.data));
   }, []);
 
   useEffect(() => {
@@ -36,10 +28,8 @@ export default function App() {
         setAyahs(data.data.ayahs);
         setRevealedCount(0);
         progressRef.current.idx = 0;
-        setErrorInfo(null);
         setLoading(false);
-      })
-      .catch(err => setLoading(false));
+      });
   }, [selectedSurah]);
 
   const wordList = useMemo(() => {
@@ -50,116 +40,108 @@ export default function App() {
         text = text.replace("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ ", "");
       }
       const words = text.split(/\s+/);
-      words.forEach((t, i) => {
-        if (t) arr.push({
-          original: t,
-          normalized: normalizeArabic(t),
-          id: `${ayah.number}-${i}`
-        });
-      });
+      words.forEach((t, i) => { if (t) arr.push({ original: t, normalized: normalizeArabic(t), id: `${ayah.number}-${i}` }); });
     });
     return arr;
   }, [ayahs, selectedSurah]);
 
-  const startListening = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return alert("المتصفح لا يدعم الصوت");
-    const r = new SR();
-    r.lang = 'ar-SA';
-    r.continuous = true;
-    r.interimResults = true;
-    r.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          const spokenWords = e.results[i][0].transcript.trim().split(/\s+/);
-          let currentIdx = progressRef.current.idx;
-          for (const spoken of spokenWords) {
-            if (currentIdx < wordList.length && normalizeArabic(spoken) === wordList[currentIdx].normalized) {
-              currentIdx++;
-              setRevealedCount(currentIdx);
-              progressRef.current.idx = currentIdx;
-            }
-          }
-        }
-      }
-    };
-    r.onstart = () => setIsListening(true);
-    r.onend = () => setIsListening(false);
-    recRef.current = r;
-    r.start();
-  };
-
   return (
-    <div dir="rtl" style={{ minHeight: '100vh', backgroundColor: '#fcfaf5', padding: '15px', fontFamily: 'serif' }}>
+    <div dir="rtl" style={{ 
+      minHeight: '100vh', 
+      backgroundColor: '#f4f1ea', // لون ورقي هادئ
+      padding: '20px 10px', 
+      fontFamily: "'Amiri', serif",
+      backgroundImage: 'radial-gradient(#e5e0d5 1px, transparent 1px)',
+      backgroundSize: '20px 20px'
+    }}>
       
-      {/* Header & Selector */}
-      <div style={{ maxWidth: '700px', margin: '0 auto', textAlign: 'center' }}>
-        <h2 style={{ color: '#2d6a4f', marginBottom: '15px' }}>مُصحح التلاوة</h2>
-        <select 
-          value={selectedSurah} 
-          onChange={(e) => setSelectedSurah(e.target.value)}
-          style={{ width: '100%', padding: '12px', borderRadius: '12px', fontSize: '18px', border: '2px solid #2d6a4f', marginBottom: '15px' }}
-        >
-          {surahs.map(s => <option key={s.number} value={s.number}>{s.number}. {s.name}</option>)}
-        </select>
+      {/* Header Card */}
+      <div style={{ 
+        maxWidth: '600px', margin: '0 auto 25px', 
+        backgroundColor: '#fff', padding: '20px', 
+        borderRadius: '20px', boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
+        border: '1px solid #d4cebc'
+      }}>
+        <h2 style={{ color: '#1b4332', textAlign: 'center', marginTop: 0, fontSize: '28px' }}>مُصحح التلاوة</h2>
+        
+        <div style={{ position: 'relative', marginBottom: '15px' }}>
+          <select 
+            value={selectedSurah} 
+            onChange={(e) => setSelectedSurah(e.target.value)}
+            style={{ 
+              width: '100%', padding: '15px', borderRadius: '12px', fontSize: '18px', 
+              border: '2px solid #b7ad94', backgroundColor: '#fdfcf8', color: '#333',
+              outline: 'none', cursor: 'pointer'
+            }}
+          >
+            {surahs.map(s => <option key={s.number} value={s.number}>{s.number}. {s.name}</option>)}
+          </select>
+        </div>
 
         <button 
-          onClick={isListening ? () => recRef.current.stop() : startListening} 
+          onClick={() => setIsListening(!isListening)} // تجريبي للشكل اليوم
           style={{
-            width: '100%', padding: '15px', borderRadius: '50px', backgroundColor: isListening ? '#e63946' : '#2d6a4f',
-            color: 'white', border: 'none', fontSize: '18px', fontWeight: 'bold', marginBottom: '20px', cursor: 'pointer'
+            width: '100%', padding: '15px', borderRadius: '50px', 
+            backgroundColor: isListening ? '#bc4749' : '#2d6a4f',
+            color: 'white', border: 'none', fontSize: '20px', fontWeight: 'bold', 
+            boxShadow: '0 5px 15px rgba(45, 106, 79, 0.3)', cursor: 'pointer'
           }}
         >
-          {isListening ? '⏹ إيقاف' : '🎤 ابدأ التسميع'}
+          {isListening ? '⏹ إنهاء التسميع' : '🎤 ابدأ التسميع (إخفاء)'}
         </button>
       </div>
 
-      {/* منطقة المصحف المطورة */}
+      {/* Mushaf Page Area */}
       <div style={{ 
-        maxWidth: '800px', margin: '0 auto', backgroundColor: '#fff', padding: '30px', 
-        borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)',
-        border: '1px solid #eee'
+        maxWidth: '800px', margin: '0 auto', 
+        backgroundColor: '#fffcf2', padding: '40px 25px', 
+        borderRadius: '5px', boxShadow: '0 0 40px rgba(0,0,0,0.1)',
+        borderLeft: '15px solid #2d6a4f', // حاشية جانبية كالمصحف
+        position: 'relative',
+        minHeight: '400px'
       }}>
         {loading ? (
-          <div style={{ textAlign: 'center' }}>جاري التحميل...</div>
+          <div style={{ textAlign: 'center', color: '#b7ad94', fontSize: '24px' }}>جاري فتح المصحف...</div>
         ) : (
           <div style={{ 
-            fontSize: '32px', // خط كبير وواضح
-            lineHeight: '2.2', // مسافة مريحة بين الأسطر
-            textAlign: 'justify', // توزيع الكلمات في الأسطر بشكل متناسق
-            direction: 'rtl',
-            color: '#1a1a1a',
-            wordSpacing: '2px' // مسافة بين الكلمات لمنع التداخل
+            fontSize: '34px', lineHeight: '2.5', textAlign: 'center', color: '#1a1a1a',
+            textShadow: '0.5px 0.5px 1px rgba(0,0,0,0.05)'
           }}>
             {selectedSurah != 1 && selectedSurah != 9 && (
-              <div style={{ textAlign: 'center', color: '#888', fontSize: '22px', marginBottom: '15px' }}>
+              <div style={{ 
+                textAlign: 'center', color: '#2d6a4f', fontSize: '26px', 
+                marginBottom: '30px', borderBottom: '1px double #d4cebc', paddingBottom: '10px' 
+              }}>
                 بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
               </div>
             )}
             
-            {/* عرض الكلمات في شكل فقرة متصلة (أسطر تلقائية) */}
-            <div style={{ display: 'inline-block', width: '100%' }}>
-              {wordList.map((word, idx) => (
-                <span key={word.id} style={{ 
-                  color: idx < revealedCount ? '#10b981' : (isListening ? '#eee' : '#1a1a1a'),
-                  backgroundColor: (isListening && idx >= revealedCount) ? '#f9f9f9' : 'transparent',
-                  padding: '2px 4px',
-                  borderRadius: '4px',
-                  transition: '0.3s'
-                }}>
-                  {(isListening && idx >= revealedCount) ? '...' : word.original}
-                  {' '} {/* مسافة حقيقية بين الكلمات */}
-                </span>
-              ))}
+            <div style={{ display: 'block', textAlign: 'justify', textJustify: 'inter-word' }}>
+              {wordList.map((word, idx) => {
+                const isRevealed = !isListening || idx < revealedCount;
+                const isCurrent = isListening && idx === revealedCount;
+                
+                return (
+                  <span key={word.id} style={{ 
+                    color: idx < revealedCount ? '#2d6a4f' : (isListening ? '#e9e4d4' : '#1a1a1a'),
+                    display: 'inline-block',
+                    margin: '0 3px',
+                    transition: 'all 0.4s ease',
+                    borderBottom: isCurrent ? '3px solid #ffd700' : 'none', // لمعة تحت الكلمة الحالية
+                    fontWeight: idx < revealedCount ? 'bold' : 'normal'
+                  }}>
+                    {isRevealed ? word.original : '••••'}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}
       </div>
 
-      <p style={{ textAlign: 'center', marginTop: '20px', color: '#999', fontSize: '12px' }}>
-        * الكلمات ستختفي وتظهر سطر بسطر عند التسميع الصحيح
-      </p>
+      <footer style={{ textAlign: 'center', marginTop: '30px', color: '#8b8372', fontSize: '14px' }}>
+        صدق الله العظيم
+      </footer>
     </div>
   );
 }
-
