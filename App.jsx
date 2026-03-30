@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// دالة المقارنة المرنة (تتجاهل رسم الهمزة والتاء المربوطة والتشكيل)
 const normalizeArabic = (text) => {
   if (!text) return "";
   return text
-    .replace(/[\u064B-\u065F\u0670]/g, "") 
-    .replace(/[أإآء]/g, "ا")             
-    .replace(/ة/g, "ه")                
-    .replace(/ى/g, "ي")                
+    .replace(/[\u064B-\u065F\u0670]/g, "") // إزالة التشكيل
+    .replace(/[أإآء]/g, "ا")             // توحيد الألف
+    .replace(/ة/g, "ه")                // التاء المربوطة
+    .replace(/ى/g, "ي")                // الألف المقصورة
     .trim();
 };
 
@@ -16,6 +17,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [revealedCount, setRevealedCount] = useState(0);
   const [isListening, setIsListening] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState(""); // خانة ما أقوله الآن
+  const [errorsLog, setErrorsLog] = useState([]); // سجل الأخطاء (الكلمة الصحيحة ضد ما قيل)
   
   const recognitionRef = useRef(null);
   const wordsRef = useRef([]); 
@@ -27,6 +30,8 @@ export default function App() {
 
   useEffect(() => {
     setLoading(true);
+    setErrorsLog([]);
+    setLiveTranscript("");
     if (recognitionRef.current) recognitionRef.current.stop();
     
     fetch(`https://api.alquran.cloud/v1/surah/${selectedSurah}/quran-uthmani`)
@@ -61,24 +66,41 @@ export default function App() {
     recognition.lang = 'ar-SA';
     recognition.continuous = true;
     recognition.interimResults = true;
+
     recognition.onstart = () => setIsListening(true);
+
     recognition.onresult = (event) => {
-      let latestIdx = currentIndexRef.current;
+      let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript.trim();
         if (event.results[i].isFinal) {
-          const spokenText = event.results[i][0].transcript.trim().split(/\s+/);
-          spokenText.forEach(spoken => {
+          const spokenWords = transcript.split(/\s+/);
+          let latestIdx = currentIndexRef.current;
+
+          spokenWords.forEach(spoken => {
             if (latestIdx < wordsRef.current.length) {
-              if (normalizeArabic(spoken) === wordsRef.current[latestIdx].normalized) {
+              const target = wordsRef.current[latestIdx];
+              if (normalizeArabic(spoken) === target.normalized) {
                 latestIdx++;
+              } else {
+                // إذا نطق كلمة لا تطابق الكلمة التالية في المصحف، نسجلها كخطأ
+                setErrorsLog(prev => [{
+                  correct: target.original,
+                  said: spoken,
+                  time: new Date().toLocaleTimeString('ar-DZ')
+                }, ...prev].slice(0, 5)); // نحتفظ بآخر 5 أخطاء فقط
               }
             }
           });
           currentIndexRef.current = latestIdx;
           setRevealedCount(latestIdx);
+        } else {
+          interim += transcript;
         }
       }
+      setLiveTranscript(interim || "جاري الاستماع...");
     };
+
     recognition.onend = () => { if (isListening) recognition.start(); };
     recognitionRef.current = recognition;
     recognition.start();
@@ -90,83 +112,62 @@ export default function App() {
   };
 
   return (
-    <div dir="rtl" style={{ minHeight: '100vh', backgroundColor: '#f4f1ea', padding: '20px' }}>
+    <div dir="rtl" style={{ minHeight: '100vh', backgroundColor: '#f4f1ea', padding: '10px', paddingBottom: '100px' }}>
       
-      {/* ستايل خط الأميري والتنسيق */}
       <style>
         {`
           @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');
-          .quran-container {
-            max-width: 850px;
-            margin: 0 auto;
-            background-color: #fffcf2;
-            padding: 40px 25px;
-            border-radius: 8px;
-            box-shadow: 0 0 30px rgba(0,0,0,0.05);
-            border-right: 12px solid #2d6a4f; /* الحاشية الخضراء */
-            min-height: 450px;
-          }
-          .quran-text {
-            font-family: 'Amiri', serif;
-            font-size: 34px;
-            line-height: 2.3;
-            text-align: justify;
-            color: #1a1a1a;
-          }
+          .quran-container { max-width: 850px; margin: 0 auto; background-color: #fffcf2; padding: 30px 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.05); border-right: 10px solid #2d6a4f; min-height: 350px; }
+          .quran-text { font-family: 'Amiri', serif; font-size: 30px; lineHeight: 2.2; textAlign: justify; color: #1a1a1a; }
+          .error-box { background: #fff1f2; border: 1px solid #fda4af; padding: 10px; border-radius: 8px; margin-top: 15px; font-size: 14px; }
+          .live-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #2d6a4f; color: white; padding: 15px; text-align: center; font-weight: bold; z-index: 1000; box-shadow: 0 -2px 10px rgba(0,0,0,0.2); }
         `}
       </style>
 
-      {/* لوحة التحكم */}
-      <div style={{ maxWidth: '600px', margin: '0 auto 25px', backgroundColor: '#fff', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-        <h2 style={{ textAlign: 'center', color: '#1b4332', fontFamily: "'Amiri', serif" }}>مُصحح التلاوة</h2>
-        <select 
-          value={selectedSurah} 
-          onChange={(e) => setSelectedSurah(Number(e.target.value))}
-          style={{ width: '100%', padding: '12px', borderRadius: '10px', fontSize: '18px', border: '2px solid #b7ad94', marginBottom: '15px' }}
-        >
+      {/* التحكم */}
+      <div style={{ maxWidth: '600px', margin: '0 auto 15px', backgroundColor: '#fff', padding: '15px', borderRadius: '15px' }}>
+        <h3 style={{ textAlign: 'center', color: '#1b4332', marginTop: 0 }}>مُصحح التلاوة</h3>
+        <select value={selectedSurah} onChange={(e) => setSelectedSurah(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', marginBottom: '10px' }}>
           {surahs.map(s => <option key={s.number} value={s.number}>{s.number}. {s.name}</option>)}
         </select>
-        <button 
-          onClick={isListening ? stopListening : startListening} 
-          style={{
-            width: '100%', padding: '15px', borderRadius: '50px', 
-            backgroundColor: isListening ? '#bc4749' : '#2d6a4f',
-            color: 'white', border: 'none', fontSize: '20px', fontWeight: 'bold', cursor: 'pointer'
-          }}
-        >
-          {isListening ? '⏹ إيقاف التسميع' : '🎤 ابدأ التسميع'}
+        <button onClick={isListening ? stopListening : startListening} style={{ width: '100%', padding: '12px', borderRadius: '50px', backgroundColor: isListening ? '#bc4749' : '#2d6a4f', color: 'white', border: 'none', fontWeight: 'bold' }}>
+          {isListening ? '⏹ إيقاف' : '🎤 ابدأ التسميع'}
         </button>
       </div>
 
-      {/* عرض الصفحة */}
+      {/* عرض المصحف */}
       <div className="quran-container">
-        {loading ? (
-          <p style={{ textAlign: 'center', fontFamily: 'serif' }}>جاري فتح المصحف...</p>
-        ) : (
+        {loading ? <p style={{ textAlign: 'center' }}>جاري التحميل...</p> : (
           <div className="quran-text">
-            {selectedSurah != 1 && selectedSurah != 9 && (
-              <div style={{ textAlign: 'center', color: '#2d6a4f', marginBottom: '25px', fontSize: '28px' }}>
-                بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
-              </div>
-            )}
-            
-            <div style={{ display: 'inline' }}>
-              {wordsRef.current.map((word, idx) => (
-                <span key={word.id} style={{ 
-                  color: idx < revealedCount ? '#2d6a4f' : (isListening ? '#e9e4d4' : '#1a1a1a'),
-                  margin: '0 2px', 
-                  transition: 'all 0.4s ease',
-                  fontWeight: idx < revealedCount ? '700' : '400',
-                  display: 'inline'
-                }}>
-                  {(!isListening || idx < revealedCount) ? word.original : '••••'}
-                  {' '}
-                </span>
-              ))}
-            </div>
+            {selectedSurah != 1 && selectedSurah != 9 && <div style={{ textAlign: 'center', color: '#2d6a4f', fontSize: '24px', marginBottom: '15px' }}>بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</div>}
+            {wordsRef.current.map((word, idx) => (
+              <span key={word.id} style={{ color: idx < revealedCount ? '#2d6a4f' : (isListening ? '#e9e4d4' : '#1a1a1a'), margin: '0 2px', display: 'inline' }}>
+                {(!isListening || idx < revealedCount) ? word.original : '••••'}
+              </span>
+            ))}
           </div>
         )}
       </div>
+
+      {/* خانة الأخطاء */}
+      {errorsLog.length > 0 && (
+        <div style={{ maxWidth: '850px', margin: '15px auto' }}>
+          <strong style={{ color: '#bc4749' }}>⚠️ سجل التنبيهات (آخر الكلمات):</strong>
+          {errorsLog.map((err, i) => (
+            <div key={i} className="error-box">
+               قلت: <span style={{ textDecoration: 'line-through' }}>{err.said}</span> | الصحيح: <strong>{err.correct}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* الشريط السفلي لما تقوله الآن */}
+      {isListening && (
+        <div className="live-bar">
+          <span style={{ fontSize: '12px', opacity: 0.8 }}>أنت تقول الآن:</span> <br/>
+          {liveTranscript || "استمر في القراءة..."}
+        </div>
+      )}
     </div>
   );
 }
